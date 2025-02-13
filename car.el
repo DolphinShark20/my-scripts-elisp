@@ -37,7 +37,7 @@
 	     (buf-c (concat output ".c"))
 	     )
 	(select-window (get-buffer-window comp_buf_obj))
-	(if (and (get-buffer-window "*shell*"))
+	(if (not (and (string-match "*shell*" (buffer-name(window-buffer(next-window))))))
 	    (split-window-below nil (get-buffer-window comp_buf_obj))
 	  )
 	(other-window 1)
