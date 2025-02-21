@@ -21,6 +21,15 @@ This list can be changed using a built in function."
   :group 'mude
   )
 
+(defcustom last-world nil
+  "List of information about the last MUD connected to through mude."
+  :type '(list
+	 (string :tag "Last Host") ; Last used hostname
+	 (integer :tag "Last Port") ; The last used port
+	 )
+  :group 'mude
+  )
+
 (defun m-alias ()
   "Create a preset MUD world with an alias that can be easily accessed."
   (interactive)
@@ -73,6 +82,25 @@ This list can be changed using a built in function."
 	(net-proc (open-network-stream "MUD-PROCESS" "MUD!" input-host input-port))
 	(m-window (split-window-right))
 	)
+    (setq mud-process net-proc)
+    (setq last-world (list input-host input-port))
+    (customize-save-variable 'last-world last-world)
+    (with-current-buffer "MUD!"
+      (read-only-mode 1)
+      )
+    (set-window-buffer m-window "MUD!")
+    )
+  )
+
+(defun mude-re ()
+  "Reconnect to last-joined MUD world."
+  (interactive)
+  (let* (
+	 (last-host (car last-world))
+	 (last-port (nth 1 last-world))
+	 (net-proc (open-network-stream "MUD-PROCESS" "MUD!" last-host last-port))
+	 (m-window (split-window-right))
+	 )
     (setq mud-process net-proc)
     (with-current-buffer "MUD!"
       (read-only-mode 1)
