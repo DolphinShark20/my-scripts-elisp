@@ -5,6 +5,7 @@
 ;;; I'm quite new to TCP communications, telnet, and everything, so I'll have to study other scripts that do similar things.
 ;;; Code:
 (require 'comint)
+(require 'ansi-color)
 
 ;;; General Global Variables
 (defvar mud-net-process nil)
@@ -45,8 +46,6 @@
   (let (
 	(binds (make-sparse-keymap))
 	)
-;;;    (define-key binds (kbd "s") 'scroll-down-command)
-;;;    (define-key binds (kbd "w") 'scroll-up-command)
     (set-keymap-parent binds comint-mode-map)
     binds
     )
@@ -56,6 +55,8 @@ By default, exactly the same as comint mode."
 
 (defun mud-display-mode ()
   "Major mode for the buffer that will display the MUDs output."
+  (comint-mode)
+  (ansi-color-for-comint-mode-on)
   (setq major-mode 'mud-display-mode)
   (setq mode-name "MUD-OUT")
   (use-local-map mud-display-mode-map)
@@ -101,10 +102,17 @@ By default, exactly the same as comint mode."
 
 ;;; Filter functions
 (defun mud-network-process-filter (net-proc str-out)
-  "Filter function for the NET-PROC proccess that serves STR-OUT to display."
+  "Filter function for the NET-PROC process that serves STR-OUT to display."
   (with-current-buffer (process-buffer net-proc)
-    (goto-char (point-max))
-    (insert str-out)
+    (let (
+	  (sor (point-max))
+	  (eor nil)
+	  )
+      (goto-char sor)
+      (insert str-out)
+      (setq eor (point))
+      (ansi-color-apply-on-region sor eor)
+      )
     )
   (with-selected-window (get-buffer-window (process-buffer mud-net-process))
 		       (goto-char (point-max))
@@ -133,7 +141,6 @@ By default, exactly the same as comint mode."
 (defun mude-re ()
   "Reconnect to last-joined MUD world."
   (interactive)
-  ;;; Annoying hack --- didn't want to bring in cl-return to handle mid-function breaking if user opts "N", so I put this in instead.
   (let (
 	(pass t)
 	)
