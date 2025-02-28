@@ -4,14 +4,126 @@
 ;;; I'll use 'open-network-stream' primarily to communicate with the server.
 ;;; I'm quite new to TCP communications, telnet, and everything, so I'll have to study other scripts that do similar things.
 ;;; Code:
-(require 'comint)
 (require 'ansi-color)
+(require 'password-cache)
 
-;;; General Global Variables
+; General Global Variables
 (defvar mud-net-process nil)
 (defvar mud-input-buffer nil)
+(defvar mud-proc-and-buf-name "MUD!")
 
-;;; INPUT MODE SET UP
+;; Persistent list containing data to use for quick reconnecting
+(defcustom last-world nil
+  "List of information about the last MUD connected to through mude."
+  :type '(list
+	 (string :tag "Last Host") ; Last used hostname
+	 (integer :tag "Last Port") ; The last used port
+	 )
+  :group 'mude
+  )
+
+;; Persistent settings for how the external game options should be like (autoscrolling, size of game buffer, "cinematic" mode, etc)
+(defcustom mude-settings '(0 nil t 0)
+  "Persistent settings for how the external game options should be like.
+
+Display Width - Adjusts the window width to integer value, if nil makes no adjustments.
+
+Cinematic Mode - Switches the input-display buffers from the default (side-by-side)
+                 to stacked atop eachother.
+
+Autoscroll - Turns auto-scrolling on, which adjusts the output to occupy the entire screen,
+             leaving no whitespace
+
+Autoscroll Padding - Adjusts how many whitespace lines the user wants below their display's output.
+"
+  :type '(list
+	  (integer :tag "Display Widening" :value 0)
+	  (boolean :tag "Cinematic Mode" :value nil)
+	  (boolean :tag "Autoscroll" :value t)
+	  (integer :tag "Autoscroll Padding" :value 0)
+	  )
+  :group 'mude
+  )
+
+					; Misc Functions
+(defun set-mude-settings ()
+  "Set the user settings contained in 'mude-settings'."
+  (interactive)
+  (let (
+	(usr-widen (string-to-number (read-from-minibuffer "Additional game display width: ")))
+	(usr-cine (read-from-minibuffer "Do you want to turn on Cinematic Mode? (\"y\" for yes, other for no): "))
+	(usr-as (read-from-minibuffer "Do you want to turn on autoscroll? (\"y\" for yes, other for no): "))
+	(usr-as-pad (string-to-number (read-from-minibuffer "How many lines of padding do you want for autoscroll? (\"nil\" for none, non-negative integer otherwise): ")))
+	)
+    (if (<= usr-widen 0)
+	(setq usr-widen 0)
+      )
+    (if (or
+	 ;;; Not a very refined check, but eh, if you're inputting "maybe", you may as well get matched as true.
+	 (string-match-p "[yY]" usr-cine)
+	 (string-match-p "[tT]" usr-cine)
+	 )
+	(setq usr-cine t)
+      (setq usr-cine nil)
+      )
+    (if (or
+	 (string-match-p "[yY]" usr-as)
+	 (string-match-p "[tT]" usr-as)
+	 )
+	(setq usr-as t)
+      (setq usr-as nil)
+      )
+    (if (not (or
+	 (integerp usr-as-pad)
+	 (<= usr-as-pad 0)
+	 ))
+	(setq usr-as-pad nil)
+	)
+    (setf (nth 0 mude-settings) usr-widen
+	  (nth 1 mude-settings) usr-cine
+	  (nth 2 mude-settings) usr-as
+	  (nth 3 mude-settings) usr-as-pad
+	  )
+    (customize-save-variable 'mude-settings mude-settings)
+    )
+  )
+
+					; Settings functions
+(defun adjust-mud-display-window-width ()
+  "Adjusts the width of the display window."
+  (if (/= (nth 0 mude-settings) 0)
+      (let (
+	    (disp-window (get-buffer-window (process-buffer mud-net-process)))
+	    (window-increase (nth 0 mude-settings))
+	    )
+	(window-resize disp-window window-increase t)
+	)
+    )
+  )
+
+(defun mud-autoscroll (buf)
+  "Positions BUF to properly display all information it can."
+  (if (nth 2 mude-settings)
+      (with-current-buffer buf
+	(let (
+	      (w-start (line-number-at-pos (window-start)))
+	      (w-height (window-body-height))
+	      (w-end nil)
+	      (w-scroll-amount nil)
+	      (as-padding (nth 3 mude-settings))
+	      )
+	  (save-excursion
+	    (goto-char (point-max))
+	    (setq w-end (line-number-at-pos))
+	    )
+	  (setq w-scroll-amount (- (- (+ w-height w-start) w-end) (+ 1 as-padding)))
+	  (scroll-down-line w-scroll-amount)
+	  )
+	)
+    )
+  )
+
+; INPUT MODE SET UP
 (defun mud-send-input-line ()
   "Sends input from input buffer's active line to active MUD connection stored at 'mud-net-process'."
   (interactive)
@@ -46,33 +158,21 @@
   (let (
 	(binds (make-sparse-keymap))
 	)
-    (set-keymap-parent binds comint-mode-map)
+    (set-keymap-parent binds text-mode-map)
     binds
     )
   "Key bindings that will be used for 'mud-display-mode'.
-By default, exactly the same as comint mode."
+By default, exactly the same as 'text-mode' and 'input-mode'."
   )
 
 (defun mud-display-mode ()
   "Major mode for the buffer that will display the MUDs output."
-  (comint-mode)
-  (ansi-color-for-comint-mode-on)
   (setq major-mode 'mud-display-mode)
   (setq mode-name "MUD-OUT")
   (use-local-map mud-display-mode-map)
   )
 
-;;; Persistent list containing data to use for quick reconnecting
-(defcustom last-world nil
-  "List of information about the last MUD connected to through mude."
-  :type '(list
-	 (string :tag "Last Host") ; Last used hostname
-	 (integer :tag "Last Port") ; The last used port
-	 )
-  :group 'mude
-  )
-
-;;; FUNCTIONS TO SET UP GAME BUFFERS
+; FUNCTIONS TO SET UP GAME BUFFERS
 (defun setup-mud-input-buffer ()
   "Set up the input buffer to interact with the MUD network process."
   (let (
@@ -88,7 +188,7 @@ By default, exactly the same as comint mode."
 
 (defun setup-mud-display-buffer (mud-proc)
   "Set up the display buffer for MUD-PROC."
-  (set-process-filter mud-proc 'mud-network-process-filter)
+  (set-process-filter mud-proc 'mud-output-filter)
   (setq mud-net-process mud-proc)
   (let (
 	(mud-proc-buf (process-buffer mud-proc))
@@ -97,35 +197,63 @@ By default, exactly the same as comint mode."
       (mud-display-mode)
       )
     (pop-to-buffer mud-proc-buf)
+    (adjust-mud-display-window-width)
     )
   )
 
-;;; Filter functions
-(defun mud-network-process-filter (net-proc str-out)
+					; Filter functions
+(defun mud-password-check (proc-str)
+  "Check whether PROC-STR has a password prompt, then opens secure input."
+  (if (string-match-p "\\b\\w*password\\:" proc-str)
+      (let (
+	    (pass-result (password-read "MUD Password: "))
+	    )
+	(process-send-string mud-net-process (concat pass-result "\n"))
+	)
+    )
+  )
+
+(defun mud-output-filter (net-proc str-out)
   "Filter function for the NET-PROC process that serves STR-OUT to display."
-  (with-current-buffer (process-buffer net-proc)
-    (let (
-	  (sor (point-max))
-	  (eor nil)
+  (let* (
+	(net-proc-buf (process-buffer net-proc))
+	(net-proc-buf-window (get-buffer-window net-proc-buf))
+	)
+    (with-current-buffer net-proc-buf
+      (let (
+	    (sor (point-max))
+	    (eor nil)
+	    (str-out-final nil)
+	    )
+	(with-temp-buffer
+	  (insert str-out)
+	  (goto-char (point-min))
+	  (replace-string-in-region "" "" (point-min) (point-max))
+	  (replace-string-in-region "ÿù" "" (point-min) (point-max))
+	  (setq str-out-final (buffer-substring (point-min) (point-max)))
 	  )
-      (goto-char sor)
-      (insert str-out)
-      (setq eor (point))
-      (ansi-color-apply-on-region sor eor)
+	(goto-char sor)
+	(insert (concat "\n" str-out-final))
+	(setq eor (point))
+	(ansi-color-apply-on-region sor eor)
+	)
       )
+    ;;; This may not be needed
+    (with-selected-window net-proc-buf-window
+      (mud-autoscroll net-proc-buf)
+      )
+    (mud-password-check str-out)
     )
-  (with-selected-window (get-buffer-window (process-buffer mud-net-process))
-		       (goto-char (point-max))
-		       )
   )
 
-;;; CORE FUNCTIONS
+; CORE FUNCTIONS
 (defun mude-nl ()
   "Main function for the MUD client."
   (interactive)
   (let* (
 	(input-host (read-from-minibuffer "Hostname: "))
 	(input-port (read-from-minibuffer "Port: "))
+	(connection-cons (cons input-host input-port))
 	(net-proc (open-network-stream "MUD-PROCESS" "*MUD!*" input-host input-port))
 	)
     (setq mud-net-process net-proc)
