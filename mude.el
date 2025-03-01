@@ -88,6 +88,25 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
     )
   )
 
+(defun display-buffer-scroll (choice)
+  "Use CHOICE to determine whether to scroll the display buffer up or down."
+  (with-selected-window (get-buffer-window (process-buffer mud-net-process))
+      (if (eq choice 0)
+	  (scroll-up-command)
+	(scroll-down-command)
+	)
+      )
+  )
+
+(defsubst cleanup-garbage-characters ()
+  "Clean up garbage characters left from coding system."
+  (replace-string-in-region "" "" (point-min) (point-max))
+  (replace-string-in-region "ý" "" (point-min) (point-max))
+  (replace-string-in-region "ÿ " (point-min) (point-max))
+  (replace-string-in-region "ÿù" "" (point-min) (point-max))
+  (replace-string-in-region "ÿÿ" "" (point-min) (point-max))
+  (replace-string-in-region "ÿÿÿ" "" (point-min) (point-max))
+  )
 					; Settings functions
 (defun adjust-mud-display-window-width ()
   "Adjusts the width of the display window."
@@ -142,7 +161,18 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
 	(binds (make-sparse-keymap))
 	)
     (set-keymap-parent binds text-mode-map)
+    (define-key binds (kbd "C-c q") 'mude-close)
     (define-key binds (kbd "<RET>") 'mud-send-input-line)
+    (define-key binds (kbd "C-c C-w") (lambda ()
+					(interactive)
+					(display-buffer-scroll 1)
+					)
+		)
+    (define-key binds (kbd "C-c C-s") (lambda ()
+					(interactive)
+					(display-buffer-scroll 0)
+					)
+		)
     binds
     )
   )
@@ -162,7 +192,7 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
     binds
     )
   "Key bindings that will be used for 'mud-display-mode'.
-By default, exactly the same as 'text-mode' and 'input-mode'."
+By default, exactly the same as 'text-mode'."
   )
 
 (defun mud-display-mode ()
@@ -228,8 +258,7 @@ By default, exactly the same as 'text-mode' and 'input-mode'."
 	(with-temp-buffer
 	  (insert str-out)
 	  (goto-char (point-min))
-	  (replace-string-in-region "" "" (point-min) (point-max))
-	  (replace-string-in-region "ÿù" "" (point-min) (point-max))
+	  (cleanup-garbage-characters)
 	  (setq str-out-final (buffer-substring (point-min) (point-max)))
 	  )
 	(goto-char sor)
