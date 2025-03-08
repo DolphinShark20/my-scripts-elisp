@@ -26,15 +26,12 @@
 (defcustom mude-settings '(0 nil t 0)
   "Persistent settings for how the external game options should be like.
 
-Display Width - Adjusts the window width to integer value, if nil makes no adjustments.
-
-Cinematic Mode - Switches the input-display buffers from the default (side-by-side)
-                 to stacked atop eachother.
-
-Autoscroll - Turns auto-scrolling on, which adjusts the output to occupy the entire screen,
-             leaving no whitespace
-
-Autoscroll Padding - Adjusts how many whitespace lines the user wants below their display's output.
+1. Display Width - Adjusts the window width to integer value, if nil makes no adjustments.
+2. Cinematic Mode - Switches the input-display buffers from the default (side-by-side)
+to stacked atop eachother.
+3. Autoscroll - Turns auto-scrolling on, which adjusts the output to occupy the entire screen,
+leaving no whitespace
+4.Autoscroll Padding - Adjusts how many whitespace lines the user wants below their display's output.
 "
   :type '(list
 	  (integer :tag "Display Widening" :value 0)
@@ -119,14 +116,14 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
 					; Settings functions
 (defun adjust-mud-display-window-size ()
   "Adjusts the width of the display window, or the height if in cinematic mode."
-  (if (/= (nth 0 mude-settings) 0)
-      (let (
-	    (disp-window (get-buffer-window (process-buffer mud-net-process)))
-	    (window-increase (nth 0 mude-settings))
-	    (cinematic-setting (nth 1 mude-settings))
-	    )
-	(window-resize disp-window window-increase (not cinematic-setting))
-	)
+  (unless (= (nth 0 mude-settings) 0)
+    (let (
+	  (disp-window (get-buffer-window (process-buffer mud-net-process)))
+	  (window-increase (nth 0 mude-settings))
+	  (cinematic-setting (nth 1 mude-settings))
+	  )
+      (window-resize disp-window window-increase (not cinematic-setting))
+      )
     )
   )
 
@@ -248,8 +245,7 @@ By default, exactly the same as 'text-mode'."
     (if cine-setting
 	(switch-to-buffer mud-proc-buf)
       (pop-to-buffer mud-proc-buf)
-    )
-    (adjust-mud-display-window-size)
+      )
     )
   )
 
@@ -314,6 +310,7 @@ By default, exactly the same as 'text-mode'."
     
     (setup-mud-display-buffer net-proc)
     (setup-mud-input-buffer)
+    (adjust-mud-display-window-size)
     )
   )
 
@@ -340,6 +337,7 @@ By default, exactly the same as 'text-mode'."
 	       )
 	  (setup-mud-display-buffer net-proc)
 	  (setup-mud-input-buffer)
+	  (adjust-mud-display-window-size)
 	  )
       )
     )
