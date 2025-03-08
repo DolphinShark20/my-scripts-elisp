@@ -10,7 +10,7 @@
 ; General Global Variables
 (defvar mud-net-process nil)
 (defvar mud-input-buffer nil)
-(defvar mud-proc-and-buf-name "MUD!")
+(defvar mud-proc-buf-name "MUD!")
 
 ;; Persistent list containing data to use for quick reconnecting
 (defcustom last-world nil
@@ -75,15 +75,11 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
       )
     (if (not (or
 	 (integerp usr-as-pad)
-	 (<= usr-as-pad 0)
+	 (>= usr-as-pad 0)
 	 ))
 	(setq usr-as-pad nil)
 	)
-    (setf (nth 0 mude-settings) usr-widen
-	  (nth 1 mude-settings) usr-cine
-	  (nth 2 mude-settings) usr-as
-	  (nth 3 mude-settings) usr-as-pad
-	  )
+    (setq mude-settings (list usr-widen usr-cine usr-as usr-as-pad))
     (customize-save-variable 'mude-settings mude-settings)
     )
   )
@@ -98,24 +94,38 @@ Autoscroll Padding - Adjusts how many whitespace lines the user wants below thei
       )
   )
 
+(defvar garbage-char-list '()
+  "Variety of character(s) to filter for in the output of the process."
+  )
+
+;;; This is set up just so it's easier to add more.
+(setq garbage-char-list '(
+			  ""
+			  "ý"
+			  "ÿ "
+			  "ÿÿ"
+			  "ÿÿÿ"
+			  "ÿù"
+			  )
+      )
+
 (defsubst cleanup-garbage-characters ()
   "Clean up garbage characters left from coding system."
-  (replace-string-in-region "" "" (point-min) (point-max))
-  (replace-string-in-region "ý" "" (point-min) (point-max))
-  (replace-string-in-region "ÿ " (point-min) (point-max))
-  (replace-string-in-region "ÿù" "" (point-min) (point-max))
-  (replace-string-in-region "ÿÿ" "" (point-min) (point-max))
-  (replace-string-in-region "ÿÿÿ" "" (point-min) (point-max))
+  (mapc (lambda (gc)
+	    (replace-string-in-region gc "" (point-min) (point-max))
+	    )
+	  garbage-char-list)
   )
 					; Settings functions
-(defun adjust-mud-display-window-width ()
-  "Adjusts the width of the display window."
+(defun adjust-mud-display-window-size ()
+  "Adjusts the width of the display window, or the height if in cinematic mode."
   (if (/= (nth 0 mude-settings) 0)
       (let (
 	    (disp-window (get-buffer-window (process-buffer mud-net-process)))
 	    (window-increase (nth 0 mude-settings))
+	    (cinematic-setting (nth 1 mude-settings))
 	    )
-	(window-resize disp-window window-increase t)
+	(window-resize disp-window window-increase (not cinematic-setting))
 	)
     )
   )
@@ -207,11 +217,19 @@ By default, exactly the same as 'text-mode'."
   "Set up the input buffer to interact with the MUD network process."
   (let (
 	(mud-in-buf (get-buffer-create "*MUD Input!*"))
+	(cinematic-setting (nth 1 mude-settings))
 	)
     (setq mud-input-buffer mud-in-buf)
-    (pop-to-buffer mud-in-buf)
     (with-current-buffer mud-in-buf
       (mud-input-mode)
+      )
+    
+    (if cinematic-setting
+	(progn
+	  (select-window (split-window-below))
+	  (switch-to-buffer mud-in-buf)
+	  )
+      (pop-to-buffer mud-in-buf)
       )
     )
   )
@@ -222,12 +240,16 @@ By default, exactly the same as 'text-mode'."
   (setq mud-net-process mud-proc)
   (let (
 	(mud-proc-buf (process-buffer mud-proc))
+	(cine-setting (nth 1 mude-settings))
 	)
     (with-current-buffer mud-proc-buf
       (mud-display-mode)
       )
-    (pop-to-buffer mud-proc-buf)
-    (adjust-mud-display-window-width)
+    (if cine-setting
+	(switch-to-buffer mud-proc-buf)
+      (pop-to-buffer mud-proc-buf)
+    )
+    (adjust-mud-display-window-size)
     )
   )
 
@@ -283,7 +305,7 @@ By default, exactly the same as 'text-mode'."
 	(input-host (read-from-minibuffer "Hostname: "))
 	(input-port (read-from-minibuffer "Port: "))
 	(connection-cons (cons input-host input-port))
-	(net-proc (open-network-stream "MUD-PROCESS" "*MUD!*" input-host input-port))
+	(net-proc (open-network-stream "MUD-PROCESS" mud-proc-buf-name input-host input-port))
 	)
     (setq mud-net-process net-proc)
         
@@ -302,7 +324,7 @@ By default, exactly the same as 'text-mode'."
 	(pass t)
 	)
     (if (and
-	 (get-buffer "*MUD!*")
+	 (get-buffer mud-proc-buf-name)
 	 (get-buffer "*MUD Input!*")
 	 )
 	(if (string-equal-ignore-case (read-from-minibuffer "MUD session/buffers may still be open! Close them and reconnect (Y) or halt reconnection (N/ANYKEY); [Y/N]: ") "Y")
@@ -314,7 +336,7 @@ By default, exactly the same as 'text-mode'."
 	(let* (
 	       (last-host (car last-world))
 	       (last-port (nth 1 last-world))
-	       (net-proc (open-network-stream "MUD-PROCESS" "*MUD!*" last-host last-port))
+	       (net-proc (open-network-stream "MUD-PROCESS" mud-proc-buf-name last-host last-port))
 	       )
 	  (setup-mud-display-buffer net-proc)
 	  (setup-mud-input-buffer)
